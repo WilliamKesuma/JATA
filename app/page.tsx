@@ -302,8 +302,8 @@ export default function Home() {
 
   const selectedBullets = result
     ? experienceBank.filter((bullet) =>
-        result.selectedBulletIds.includes(bullet.id)
-      )
+      result.selectedBulletIds.includes(bullet.id)
+    )
     : [];
 
   return (
@@ -325,7 +325,7 @@ export default function Home() {
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
-                Intelligent CV Tailoring & Application Studio
+                Job Application Tailoring Assistant
               </p>
             </div>
           </div>
@@ -542,11 +542,10 @@ export default function Home() {
                           key={cat}
                           type="button"
                           onClick={() => setSelectedCategory(cat)}
-                          className={`text-[11px] px-2.5 py-1 rounded-md capitalize font-medium whitespace-nowrap transition-colors ${
-                            selectedCategory === cat
+                          className={`text-[11px] px-2.5 py-1 rounded-md capitalize font-medium whitespace-nowrap transition-colors ${selectedCategory === cat
                               ? "bg-indigo-600 text-white"
                               : "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                          }`}
+                            }`}
                         >
                           {cat}
                         </button>
@@ -567,13 +566,12 @@ export default function Home() {
                               {bullet.category}
                             </span>
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                                bullet.strength === "high"
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${bullet.strength === "high"
                                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                   : bullet.strength === "medium"
-                                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                  : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
-                              }`}
+                                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                    : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                                }`}
                             >
                               {bullet.strength}
                             </span>
@@ -735,33 +733,30 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setActiveTab("summary")}
-                      className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                        activeTab === "summary"
+                      className={`px-3 py-1 rounded-md font-medium transition-colors ${activeTab === "summary"
                           ? "bg-indigo-600 text-white"
                           : "text-zinc-400 hover:text-zinc-200"
-                      }`}
+                        }`}
                     >
                       CV Summary
                     </button>
                     <button
                       type="button"
                       onClick={() => setActiveTab("email")}
-                      className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                        activeTab === "email"
+                      className={`px-3 py-1 rounded-md font-medium transition-colors ${activeTab === "email"
                           ? "bg-indigo-600 text-white"
                           : "text-zinc-400 hover:text-zinc-200"
-                      }`}
+                        }`}
                     >
                       Cover Email
                     </button>
                     <button
                       type="button"
                       onClick={() => setActiveTab("bullets")}
-                      className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                        activeTab === "bullets"
+                      className={`px-3 py-1 rounded-md font-medium transition-colors ${activeTab === "bullets"
                           ? "bg-indigo-600 text-white"
                           : "text-zinc-400 hover:text-zinc-200"
-                      }`}
+                        }`}
                     >
                       Selected Bullets ({selectedBullets.length})
                     </button>
