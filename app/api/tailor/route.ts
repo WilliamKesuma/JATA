@@ -105,29 +105,43 @@ Instructions:
 - selectedBulletIds must only include ids from the candidate experience bullets above.`;
 
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            selectedBulletIds: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            coverEmail: { type: Type.STRING },
-          },
-          required: ["summary", "selectedBulletIds", "coverEmail"],
-        },
-      },
-    });
+    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.7-flash"];
+    let text: string | undefined;
+    let lastError: unknown;
 
-    const text = response.text;
+    for (const model of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                summary: { type: Type.STRING },
+                selectedBulletIds: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                coverEmail: { type: Type.STRING },
+              },
+              required: ["summary", "selectedBulletIds", "coverEmail"],
+            },
+          },
+        });
+        if (response.text) {
+          text = response.text;
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Model ${model} failed in tailor, trying fallback...`, err);
+      }
+    }
+
     if (!text) {
-      throw new Error("Gemini returned an empty response");
+      throw lastError || new Error("Gemini returned an empty response");
     }
 
     const result = parseModelJson(text);

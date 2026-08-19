@@ -184,64 +184,78 @@ Instructions:
 - Return JSON only: { "bullets": [ ... ] }`;
 
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            bullets: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  category: {
-                    type: Type.STRING,
-                    enum: [...EXPERIENCE_CATEGORIES],
-                  },
-                  tags: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
-                  text: { type: Type.STRING },
-                  context: {
+    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.7-flash"];
+    let text: string | undefined;
+    let lastError: unknown;
+
+    for (const model of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                bullets: {
+                  type: Type.ARRAY,
+                  items: {
                     type: Type.OBJECT,
                     properties: {
-                      role: { type: Type.STRING },
-                      org: { type: Type.STRING },
-                      dates: { type: Type.STRING },
+                      id: { type: Type.STRING },
+                      category: {
+                        type: Type.STRING,
+                        enum: [...EXPERIENCE_CATEGORIES],
+                      },
+                      tags: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
+                      text: { type: Type.STRING },
+                      context: {
+                        type: Type.OBJECT,
+                        properties: {
+                          role: { type: Type.STRING },
+                          org: { type: Type.STRING },
+                          dates: { type: Type.STRING },
+                        },
+                        required: ["role", "org", "dates"],
+                      },
+                      metrics: { type: Type.STRING, nullable: true },
+                      strength: {
+                        type: Type.STRING,
+                        enum: [...EXPERIENCE_STRENGTHS],
+                      },
                     },
-                    required: ["role", "org", "dates"],
-                  },
-                  metrics: { type: Type.STRING, nullable: true },
-                  strength: {
-                    type: Type.STRING,
-                    enum: [...EXPERIENCE_STRENGTHS],
+                    required: [
+                      "id",
+                      "category",
+                      "tags",
+                      "text",
+                      "context",
+                      "metrics",
+                      "strength",
+                    ],
                   },
                 },
-                required: [
-                  "id",
-                  "category",
-                  "tags",
-                  "text",
-                  "context",
-                  "metrics",
-                  "strength",
-                ],
               },
+              required: ["bullets"],
             },
           },
-          required: ["bullets"],
-        },
-      },
-    });
+        });
+        if (response.text) {
+          text = response.text;
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Model ${model} failed in parse-cv, trying fallback...`, err);
+      }
+    }
 
-    const text = response.text;
     if (!text) {
-      throw new Error("Gemini returned an empty response");
+      throw lastError || new Error("Gemini returned an empty response");
     }
 
     const bullets = normalizeBullets(parseModelJson(text));

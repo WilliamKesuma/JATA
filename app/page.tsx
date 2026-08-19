@@ -135,7 +135,10 @@ export default function Home() {
 
       if (!response.ok) {
         throw new Error(
-          readApiError(payload, "We couldn't parse that CV. Please try another file.")
+          readApiError(
+            payload,
+            `Server returned error (${response.status}). Please try again.`
+          )
         );
       }
 
@@ -154,7 +157,7 @@ export default function Home() {
       setError(
         err instanceof Error
           ? err.message
-          : "We couldn't parse that CV. Please try another file."
+          : "An unexpected error occurred while parsing the CV."
       );
     } finally {
       setIsParsing(false);
