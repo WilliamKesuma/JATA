@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
 import {
   EXPERIENCE_CATEGORIES,
   EXPERIENCE_STRENGTHS,
@@ -44,16 +43,6 @@ function detectKind(
   }
 
   return "unsupported";
-}
-
-async function extractPdfText(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: new Uint8Array(buffer) });
-  try {
-    const result = await parser.getText();
-    return result.text ?? "";
-  } finally {
-    await parser.destroy();
-  }
 }
 
 async function extractDocxText(buffer: Buffer): Promise<string> {
@@ -137,41 +126,16 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await cv.arrayBuffer());
-    let extracted = "";
-
-    try {
-      if (kind === "pdf") {
-        extracted = await extractPdfText(buffer);
-      } else if (kind === "docx") {
-        extracted = await extractDocxText(buffer);
-      } else {
-        extracted = buffer.toString("utf8");
-      }
-    } catch (error) {
-      console.error("CV text extraction failed:", error);
-      return NextResponse.json(
-        { error: "We couldn't read that file. Try a different PDF, DOCX, or TXT export." },
-        { status: 400 }
-      );
-    }
-
-    const cvText = extracted.replace(/\u0000/g, "").trim();
-    if (!cvText) {
-      return NextResponse.json(
-        { error: "That CV looks empty. Try another file with selectable text." },
-        { status: 400 }
-      );
-    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === "your_key_here") {
-      throw new Error("GEMINI_API_KEY is not configured");
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY is not configured in environment variables." },
+        { status: 500 }
+      );
     }
 
-    const prompt = `You are parsing a CV into structured experience bullets.
-
-CV text:
-${cvText.slice(0, MAX_CV_CHARS)}
+    const instructions = `You are parsing a CV into structured experience bullets.
 
 Instructions:
 - Extract concrete experience bullets (achievements, responsibilities, projects). Skip contact details, skills lists, and education unless they are written as impact bullets.
@@ -183,6 +147,49 @@ Instructions:
 - strength is your best guess of how quantified/impactful the bullet is: high, medium, or low.
 - Return JSON only: { "bullets": [ ... ] }`;
 
+    let contents: unknown;
+
+    if (kind === "pdf") {
+      contents = [
+        {
+          inlineData: {
+            mimeType: "application/pdf",
+            data: buffer.toString("base64"),
+          },
+        },
+        instructions,
+      ];
+    } else if (kind === "docx") {
+      let docxText = "";
+      try {
+        docxText = await extractDocxText(buffer);
+      } catch (e) {
+        console.error("DOCX extraction error:", e);
+        return NextResponse.json(
+          { error: "Failed to read DOCX file. Please try another export." },
+          { status: 400 }
+        );
+      }
+
+      if (!docxText.trim()) {
+        return NextResponse.json(
+          { error: "The uploaded DOCX file contains no text." },
+          { status: 400 }
+        );
+      }
+
+      contents = `${instructions}\n\nCV text:\n${docxText.slice(0, MAX_CV_CHARS)}`;
+    } else {
+      const txtContent = buffer.toString("utf8").replace(/\u0000/g, "").trim();
+      if (!txtContent) {
+        return NextResponse.json(
+          { error: "The uploaded TXT file is empty." },
+          { status: 400 }
+        );
+      }
+      contents = `${instructions}\n\nCV text:\n${txtContent.slice(0, MAX_CV_CHARS)}`;
+    }
+
     const ai = new GoogleGenAI({ apiKey });
     const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.7-flash"];
     let text: string | undefined;
@@ -192,7 +199,7 @@ Instructions:
       try {
         const response = await ai.models.generateContent({
           model,
-          contents: prompt,
+          contents: contents as any,
           config: {
             responseMimeType: "application/json",
             responseSchema: {
