@@ -1,6 +1,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const rateLimitByIp = new Map<string, number[]>();
+
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
+
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const recent = (rateLimitByIp.get(ip) ?? []).filter((timestamp) => timestamp > windowStart);
+
+  if (recent.length >= RATE_LIMIT_MAX) {
+    rateLimitByIp.set(ip, recent);
+    return true;
+  }
+
+  recent.push(now);
+  rateLimitByIp.set(ip, recent);
+  return false;
+}
+
 const DUMMY_EXPERIENCE = [
   {
     id: "exp-1",
@@ -48,6 +79,16 @@ function parseModelJson(text: string): TailorResult {
 
 export async function POST(request: Request) {
   try {
+    if (isRateLimited(getClientIp(request))) {
+      return NextResponse.json(
+        {
+          error:
+            "Too many requests. Limit is 10 per hour. Please try again later.",
+        },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as TailorRequestBody;
     const jobDescription =
       typeof body.jobDescription === "string" ? body.jobDescription.trim() : "";

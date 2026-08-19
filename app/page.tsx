@@ -1,68 +1,245 @@
-import Image from "next/image";
+"use client";
+
+import { FormEvent, useState } from "react";
+
+const EXPERIENCE_BULLETS = [
+  {
+    id: "exp-1",
+    text: "Led a cross-functional team of 6 to ship a customer-facing dashboard that reduced support tickets by 28%.",
+    category: "leadership",
+  },
+  {
+    id: "exp-2",
+    text: "Built TypeScript APIs and React frontends for a hiring workflow tool used by 40+ recruiters.",
+    category: "engineering",
+  },
+  {
+    id: "exp-3",
+    text: "Partnered with hiring managers to rewrite job posts and screening rubrics, improving qualified applicant rate by 19%.",
+    category: "product",
+  },
+] as const;
+
+type TailorResult = {
+  summary: string;
+  selectedBulletIds: string[];
+  coverEmail: string;
+};
+
+function stripMarkdownFences(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
+}
+
+function isTailorResult(value: unknown): value is TailorResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.summary === "string" &&
+    typeof record.coverEmail === "string" &&
+    Array.isArray(record.selectedBulletIds) &&
+    record.selectedBulletIds.every((id) => typeof id === "string")
+  );
+}
+
+function parseTailorResponse(payload: unknown): TailorResult {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Unexpected response");
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  if (typeof record.result === "string") {
+    const parsed: unknown = JSON.parse(stripMarkdownFences(record.result));
+    if (!isTailorResult(parsed)) {
+      throw new Error("Unexpected response");
+    }
+    return parsed;
+  }
+
+  if (isTailorResult(record)) {
+    return record;
+  }
+
+  throw new Error("Unexpected response");
+}
 
 export default function Home() {
+  const [jobDescription, setJobDescription] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<TailorResult | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setCopied(false);
+
+    if (!jobDescription.trim()) {
+      setError("Paste a job description first.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/tailor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobDescription: jobDescription.trim() }),
+      });
+
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (response.status === 429) {
+        throw new Error(
+          "You've reached the limit of 10 requests per hour. Please try again later."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error("We couldn't tailor your application. Please try again.");
+      }
+
+      setResult(parseTailorResponse(payload));
+    } catch (err) {
+      setResult(null);
+      const message =
+        err instanceof Error && err.message.includes("10 requests per hour")
+          ? err.message
+          : err instanceof Error && err.message === "Paste a job description first."
+            ? err.message
+            : "We couldn't tailor your application. Please try again.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function copyCoverEmail() {
+    if (!result) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(result.coverEmail);
+      setCopied(true);
+    } catch {
+      setError("Couldn't copy the email. You can select and copy it manually.");
+    }
+  }
+
+  const selectedBullets = result
+    ? EXPERIENCE_BULLETS.filter((bullet) =>
+        result.selectedBulletIds.includes(bullet.id)
+      )
+    : [];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="flex flex-1 justify-center bg-zinc-50 px-4 py-12 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <main className="w-full max-w-2xl">
+        <header className="mb-8">
+          <p className="text-sm font-medium tracking-wide text-zinc-500 uppercase">
+            JATA
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+            Tailor your application
+          </h1>
+          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+            Paste a job description to generate a CV summary and cover email.
+          </p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <label htmlFor="job-description" className="sr-only">
+            Job description
+          </label>
+          <textarea
+            id="job-description"
+            value={jobDescription}
+            onChange={(event) => setJobDescription(event.target.value)}
+            placeholder="Paste the job description here..."
+            rows={12}
+            className="w-full resize-y rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base leading-relaxed shadow-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:placeholder:text-zinc-500 dark:focus:border-zinc-600 dark:focus:ring-zinc-800"
+          />
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex h-11 items-center justify-center rounded-lg bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            {isLoading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white dark:border-zinc-400 dark:border-t-zinc-900" />
+                Generating...
+              </span>
+            ) : (
+              "Tailor My Application"
+            )}
+          </button>
+        </form>
+
+        {error ? (
+          <p
+            role="alert"
+            className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/60 dark:text-red-200"
           >
-            Documentation
-          </a>
-        </div>
+            {error}
+          </p>
+        ) : null}
+
+        {result ? (
+          <section className="mt-8 space-y-4">
+            <article className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">
+                CV summary
+              </h2>
+              <p className="mt-3 whitespace-pre-wrap leading-relaxed">
+                {result.summary}
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">
+                  Cover email
+                </h2>
+                <button
+                  type="button"
+                  onClick={copyCoverEmail}
+                  className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  {copied ? "Copied" : "Copy to clipboard"}
+                </button>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap leading-relaxed">
+                {result.coverEmail}
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">
+                Selected experience
+              </h2>
+              {selectedBullets.length > 0 ? (
+                <ul className="mt-3 list-disc space-y-2 pl-5 leading-relaxed">
+                  {selectedBullets.map((bullet) => (
+                    <li key={bullet.id}>{bullet.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-zinc-500">
+                  No matching experience bullets were selected.
+                </p>
+              )}
+            </article>
+          </section>
+        ) : null}
       </main>
     </div>
   );
