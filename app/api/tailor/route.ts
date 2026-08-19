@@ -1,57 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const rateLimitByIp = new Map<string, number[]>();
-
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT_WINDOW_MS;
-  const recent = (rateLimitByIp.get(ip) ?? []).filter((timestamp) => timestamp > windowStart);
-
-  if (recent.length >= RATE_LIMIT_MAX) {
-    rateLimitByIp.set(ip, recent);
-    return true;
-  }
-
-  recent.push(now);
-  rateLimitByIp.set(ip, recent);
-  return false;
-}
-
-const DUMMY_EXPERIENCE = [
-  {
-    id: "exp-1",
-    text: "Led a cross-functional team of 6 to ship a customer-facing dashboard that reduced support tickets by 28%.",
-    category: "leadership",
-  },
-  {
-    id: "exp-2",
-    text: "Built TypeScript APIs and React frontends for a hiring workflow tool used by 40+ recruiters.",
-    category: "engineering",
-  },
-  {
-    id: "exp-3",
-    text: "Partnered with hiring managers to rewrite job posts and screening rubrics, improving qualified applicant rate by 19%.",
-    category: "product",
-  },
-] as const;
+import { parseExperienceBank } from "@/lib/experience";
+import {
+  enforceRateLimit,
+  MAX_JOB_DESCRIPTION_CHARS,
+} from "@/lib/rate-limit";
 
 type TailorRequestBody = {
   jobDescription?: unknown;
+  experienceBank?: unknown;
 };
 
 type TailorResult = {
@@ -79,23 +36,38 @@ function parseModelJson(text: string): TailorResult {
 
 export async function POST(request: Request) {
   try {
-    if (isRateLimited(getClientIp(request))) {
+    const rateLimit = await enforceRateLimit(request);
+    if (!rateLimit.ok) {
       return NextResponse.json(
-        {
-          error:
-            "Too many requests. Limit is 10 per hour. Please try again later.",
-        },
-        { status: 429 }
+        { error: rateLimit.message },
+        { status: rateLimit.status }
       );
     }
 
     const body = (await request.json()) as TailorRequestBody;
     const jobDescription =
       typeof body.jobDescription === "string" ? body.jobDescription.trim() : "";
+    const experienceBank = parseExperienceBank(body.experienceBank);
 
     if (!jobDescription) {
       return NextResponse.json(
         { error: "jobDescription is required" },
+        { status: 400 }
+      );
+    }
+
+    if (jobDescription.length > MAX_JOB_DESCRIPTION_CHARS) {
+      return NextResponse.json(
+        {
+          error: `Job description must be at most ${MAX_JOB_DESCRIPTION_CHARS} characters.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!experienceBank || experienceBank.length === 0) {
+      return NextResponse.json(
+        { error: "Import a CV first so we have experience bullets to tailor from." },
         { status: 400 }
       );
     }
@@ -105,9 +77,12 @@ export async function POST(request: Request) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
 
-    const bulletList = DUMMY_EXPERIENCE.map(
-      (bullet) => `- id: ${bullet.id}\n  category: ${bullet.category}\n  text: ${bullet.text}`
-    ).join("\n");
+    const bulletList = experienceBank
+      .map(
+        (bullet) =>
+          `- id: ${bullet.id}\n  category: ${bullet.category}\n  tags: ${bullet.tags.join(", ")}\n  role: ${bullet.context.role}\n  org: ${bullet.context.org}\n  dates: ${bullet.context.dates}\n  metrics: ${bullet.metrics ?? "none"}\n  strength: ${bullet.strength}\n  text: ${bullet.text}`
+      )
+      .join("\n");
 
     const prompt = `You are helping tailor a CV and cover email to a specific job.
 
