@@ -134,8 +134,9 @@ Instructions:
     return NextResponse.json(result);
   } catch (error) {
     console.error("POST /api/tailor failed:", error);
+    const message = error instanceof Error ? error.message : "Failed to tailor CV";
     return NextResponse.json(
-      { error: "Failed to tailor CV" },
+      { error: `Failed to tailor CV: ${message}` },
       { status: 500 }
     );
   }

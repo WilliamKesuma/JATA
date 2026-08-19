@@ -255,8 +255,9 @@ Instructions:
     return NextResponse.json({ bullets });
   } catch (error) {
     console.error("POST /api/parse-cv failed:", error);
+    const message = error instanceof Error ? error.message : "Failed to parse CV";
     return NextResponse.json(
-      { error: "Failed to parse CV" },
+      { error: `Failed to parse CV: ${message}` },
       { status: 500 }
     );
   }
