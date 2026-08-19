@@ -1,6 +1,6 @@
-export const IP_LIMIT_PER_HOUR = 5;
-export const GLOBAL_LIMIT_PER_DAY = 80;
-export const MIN_INTERVAL_MS = 15_000;
+export const IP_LIMIT_PER_HOUR = 10;
+export const GLOBAL_LIMIT_PER_DAY = 150;
+export const MIN_INTERVAL_MS = 10_000;
 export const MAX_JOB_DESCRIPTION_CHARS = 8000;
 
 export type RateLimitDecision =

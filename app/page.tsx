@@ -340,7 +340,10 @@ export default function Home() {
                 </span>
               </div>
             )}
-            <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400">
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center gap-1.5">
+              <span>Demo limit: 10 gen / hr</span>
+            </span>
+            <span className="hidden sm:inline-flex text-xs font-medium px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400">
               ⚡ Gemini Powered
             </span>
           </div>
@@ -684,17 +687,22 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-xs text-zinc-500">
-                    {experienceBank.length === 0
-                      ? "⚠️ Import a CV first to enable tailoring."
-                      : `⚡ ${experienceBank.length} bullets available for matching.`}
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex flex-col text-xs text-zinc-500 gap-0.5">
+                    <span>
+                      {experienceBank.length === 0
+                        ? "⚠️ Import a CV first to enable tailoring."
+                        : `⚡ ${experienceBank.length} bullets available for matching.`}
+                    </span>
+                    <span className="text-[11px] text-zinc-500">
+                      ℹ️ Public demo allows up to 10 generations per hour.
+                    </span>
+                  </div>
 
                   <button
                     type="submit"
                     disabled={isLoading || isParsing || experienceBank.length === 0}
-                    className="inline-flex h-11 px-6 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:opacity-90 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-11 px-6 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:opacity-90 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50 shrink-0"
                   >
                     {isLoading ? (
                       <>
