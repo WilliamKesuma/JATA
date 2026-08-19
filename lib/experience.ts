@@ -1,9 +1,11 @@
 export const EXPERIENCE_CATEGORIES = [
+  "cloud-infrastructure",
+  "software-mobile",
+  "data-analytics",
+  "product-operations",
+  "leadership-management",
+  "speaking-achievements",
   "technical",
-  "business-analysis",
-  "leadership",
-  "teaching",
-  "marketing",
 ] as const;
 
 export const EXPERIENCE_STRENGTHS = ["high", "medium", "low"] as const;

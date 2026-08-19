@@ -135,16 +135,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const instructions = `You are parsing a CV into structured experience bullets.
+    const instructions = `You are parsing a CV into structured, high-impact experience bullets for an experience bank.
 
 Instructions:
-- Extract concrete experience bullets (achievements, responsibilities, projects). Skip contact details, skills lists, and education unless they are written as impact bullets.
+- Extract all meaningful achievement and impact bullets across ALL sections, including:
+  1. Work Experience (engineering, operations, development, analysis).
+  2. Leadership & Community Experience (organization coordination, partnerships, team management).
+  3. Projects (technical architecture, product roadmaps, stakeholder analysis, full-stack implementations).
+  4. Achievements, Keynotes & Speaking (TEDx, workshops, innovation competition awards).
+  5. Academic / Thesis achievements (e.g., forecasting models, research pipelines with quantifiable results).
 - Use category as one of: ${EXPERIENCE_CATEGORIES.join(", ")}.
-- id must be a short slug from role + org (lowercase, hyphens).
-- text should be a cleaned, standalone bullet.
-- tags should be short keywords.
-- metrics should be a short string if the bullet has a number/outcome, otherwise null.
-- strength is your best guess of how quantified/impactful the bullet is: high, medium, or low.
+- Assign accurate context:
+  - role: Job title, project role, coordinator title, or speaker title.
+  - org: Company name, institution, project name, or event name.
+  - dates: Date range as written in the CV (e.g. "January 2026 - March 2026", "Expected 2026").
+- id: Short slug combining role + org (lowercase, hyphenated).
+- text: Clean, standalone, impactful bullet starting with an active action verb.
+- tags: Array of 3-5 specific technical and functional keywords (e.g. ["aws-cdk", "dynamodb", "lambda", "python"]).
+- metrics: Extract the explicit numbers or quantifiable outcome if present (e.g., "86 Lambdas, 14 GSIs, 100+ endpoints", "4.8/5 satisfaction", "40% increase in attendance", "<2% MAPE"), otherwise null.
+- strength: Classify as "high" (quantified metrics & major impact), "medium" (clear delivery/responsibility), or "low" (general task).
 - Return JSON only: { "bullets": [ ... ] }`;
 
     let contents: unknown;

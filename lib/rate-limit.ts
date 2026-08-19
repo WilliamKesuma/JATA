@@ -142,14 +142,6 @@ export async function enforceRateLimit(request: Request): Promise<RateLimitDecis
     return checkRedis(getClientIp(request));
   }
 
-  if (process.env.VERCEL) {
-    return {
-      ok: false,
-      status: 503,
-      message:
-        "This demo is not accepting requests yet because production rate limiting is not configured.",
-    };
-  }
-
+  // Gracefully fallback to in-memory rate limiting
   return checkMemory(getClientIp(request));
 }
