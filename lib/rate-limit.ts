@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 
 export const IP_LIMIT_PER_HOUR = 10;
+export const USER_LIMIT_PER_DAY = 25;
 export const GLOBAL_LIMIT_PER_DAY = 150;
 export const MIN_INTERVAL_MS = 10_000;
 export const MAX_JOB_DESCRIPTION_CHARS = 8000;
@@ -11,6 +12,7 @@ export type RateLimitDecision =
 
 const memoryHour = new Map<string, number[]>();
 const memoryCooldown = new Map<string, number>();
+const memoryUserDay = new Map<string, { start: number; count: number }>();
 let memoryDay: { start: number; count: number } = { start: 0, count: 0 };
 
 function hasUpstash(): boolean {
@@ -54,15 +56,37 @@ async function upstash(command: (string | number)[]): Promise<unknown> {
   return payload.result;
 }
 
-function checkMemory(ip: string): RateLimitDecision {
+function checkMemory(ip: string, userId?: string): RateLimitDecision {
   const now = Date.now();
-  const cooldownUntil = memoryCooldown.get(ip) ?? 0;
+  const trackingKey = userId ? `user:${userId}` : ip;
+
+  const cooldownUntil = memoryCooldown.get(trackingKey) ?? 0;
   if (cooldownUntil > now) {
     return {
       ok: false,
       status: 429,
       message: "Please wait a few seconds before generating again.",
     };
+  }
+
+  if (userId) {
+    const userUsage = memoryUserDay.get(userId) ?? { start: now, count: 0 };
+    const dayStart = now - 24 * 60 * 60 * 1000;
+    if (userUsage.start < dayStart) {
+      userUsage.start = now;
+      userUsage.count = 0;
+    }
+    if (userUsage.count >= USER_LIMIT_PER_DAY) {
+      return {
+        ok: false,
+        status: 429,
+        message: `You have reached your daily quota (${USER_LIMIT_PER_DAY} generations/day). Quota resets tomorrow.`,
+      };
+    }
+    userUsage.count += 1;
+    memoryUserDay.set(userId, userUsage);
+    memoryCooldown.set(trackingKey, now + MIN_INTERVAL_MS);
+    return { ok: true };
   }
 
   const hourStart = now - 60 * 60 * 1000;
@@ -72,7 +96,7 @@ function checkMemory(ip: string): RateLimitDecision {
     return {
       ok: false,
       status: 429,
-      message: `This demo allows ${IP_LIMIT_PER_HOUR} generations per hour per visitor. Please try again later.`,
+      message: `This demo allows ${IP_LIMIT_PER_HOUR} generations per hour per visitor. Sign in for a larger quota!`,
     };
   }
 
@@ -92,13 +116,12 @@ function checkMemory(ip: string): RateLimitDecision {
   hourHits.push(now);
   memoryHour.set(ip, hourHits);
   memoryDay.count += 1;
-  memoryCooldown.set(ip, now + MIN_INTERVAL_MS);
+  memoryCooldown.set(trackingKey, now + MIN_INTERVAL_MS);
   return { ok: true };
 }
 
-async function checkRedis(ip: string): Promise<RateLimitDecision> {
-  const cooldownKey = `jata:cd:${ip}`;
-  const hourKey = `jata:ip:${ip}`;
+async function checkRedis(ip: string, userId?: string): Promise<RateLimitDecision> {
+  const cooldownKey = userId ? `jata:cd:user:${userId}` : `jata:cd:${ip}`;
   const dayKey = "jata:global:day";
 
   const coolingDown = await upstash(["GET", cooldownKey]);
@@ -110,6 +133,24 @@ async function checkRedis(ip: string): Promise<RateLimitDecision> {
     };
   }
 
+  if (userId) {
+    const userKey = `jata:user:${userId}:day`;
+    const userCount = Number(await upstash(["INCR", userKey]));
+    if (userCount === 1) {
+      await upstash(["EXPIRE", userKey, 86400]);
+    }
+    if (userCount > USER_LIMIT_PER_DAY) {
+      return {
+        ok: false,
+        status: 429,
+        message: `You have reached your daily quota (${USER_LIMIT_PER_DAY} generations/day). Quota resets tomorrow.`,
+      };
+    }
+    await upstash(["SET", cooldownKey, "1", "PX", MIN_INTERVAL_MS]);
+    return { ok: true };
+  }
+
+  const hourKey = `jata:ip:${ip}`;
   const ipCount = Number(await upstash(["INCR", hourKey]));
   if (ipCount === 1) {
     await upstash(["EXPIRE", hourKey, 3600]);
@@ -118,7 +159,7 @@ async function checkRedis(ip: string): Promise<RateLimitDecision> {
     return {
       ok: false,
       status: 429,
-      message: `This demo allows ${IP_LIMIT_PER_HOUR} generations per hour per visitor. Please try again later.`,
+      message: `This demo allows ${IP_LIMIT_PER_HOUR} generations per hour per visitor. Sign in for a larger quota!`,
     };
   }
 
@@ -139,11 +180,14 @@ async function checkRedis(ip: string): Promise<RateLimitDecision> {
   return { ok: true };
 }
 
-export async function enforceRateLimit(request: Request): Promise<RateLimitDecision> {
+export async function enforceRateLimit(
+  request: Request,
+  userId?: string
+): Promise<RateLimitDecision> {
   const ip = getClientIp(request);
 
   if (hasUpstash()) {
-    return checkRedis(ip);
+    return checkRedis(ip, userId);
   }
 
   if (process.env.NODE_ENV === "production") {
@@ -153,5 +197,5 @@ export async function enforceRateLimit(request: Request): Promise<RateLimitDecis
   }
 
   // Gracefully fallback to in-memory rate limiting
-  return checkMemory(ip);
+  return checkMemory(ip, userId);
 }

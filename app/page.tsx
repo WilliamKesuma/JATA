@@ -1,17 +1,20 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import {
   STORAGE_KEY,
   parseExperienceBank,
   type ExperienceBullet,
 } from "@/lib/experience";
+import { createClient } from "@/lib/supabase/client";
 import { Header } from "./components/Header";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { CvUploadCard } from "./components/CvUploadCard";
 import { ExperienceBankExplorer } from "./components/ExperienceBankExplorer";
 import { JobDescriptionInput } from "./components/JobDescriptionInput";
 import { TailorOutputCard } from "./components/TailorOutputCard";
+import { AuthModal } from "./components/AuthModal";
 import { type ActiveTab, type TailorResult } from "./components/types";
 
 function stripMarkdownFences(text: string): string {
@@ -81,7 +84,32 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<ActiveTab>("summary");
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
+  // Initialize Auth & Supabase state
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setUser(data.user);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Storage hydration from session/local storage
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
@@ -110,12 +138,34 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Sync to sessionStorage
   useEffect(() => {
     if (!hasHydrated) {
       return;
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(experienceBank));
   }, [experienceBank, hasHydrated]);
+
+  // When user logs in, load cloud saved CVs if available
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+    if (!supabase) return;
+
+    supabase
+      .from("saved_cvs")
+      .select("bullets")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .then(({ data, error: fetchErr }) => {
+        if (!fetchErr && data && data.length > 0 && data[0].bullets) {
+          const cloudBullets = parseExperienceBank(data[0].bullets);
+          if (cloudBullets && cloudBullets.length > 0) {
+            setExperienceBank(cloudBullets);
+          }
+        }
+      });
+  }, [user]);
 
   async function handleImportCv(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -169,6 +219,18 @@ export default function Home() {
 
       setExperienceBank(bullets);
       setResult(null);
+
+      // If logged in, automatically save to cloud
+      if (user) {
+        const supabase = createClient();
+        if (supabase) {
+          await supabase.from("saved_cvs").insert({
+            user_id: user.id,
+            title: cvFile.name.replace(/\.[^/.]+$/, ""),
+            bullets,
+          });
+        }
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -250,6 +312,20 @@ export default function Home() {
         const tailored = parseTailorResponse(payload);
         setResult(tailored);
         setActiveTab("summary");
+
+        // If logged in, log to cloud history
+        if (user) {
+          const supabase = createClient();
+          if (supabase) {
+            await supabase.from("tailored_history").insert({
+              user_id: user.id,
+              job_description: trimmedDescription,
+              summary: tailored.summary,
+              cover_email: tailored.coverEmail,
+              selected_bullet_ids: tailored.selectedBulletIds,
+            });
+          }
+        }
       } catch {
         throw new Error("Could not parse tailoring result. Please try again.");
       }
@@ -267,7 +343,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      <Header bulletCount={experienceBank.length} />
+      <Header
+        bulletCount={experienceBank.length}
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onSignOut={() => setUser(null)}
+      />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
         {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
@@ -314,6 +395,17 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={() => {
+          const supabase = createClient();
+          if (supabase) {
+            supabase.auth.getUser().then(({ data }) => setUser(data.user));
+          }
+        }}
+      />
     </div>
   );
 }

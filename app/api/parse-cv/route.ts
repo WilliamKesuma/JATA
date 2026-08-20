@@ -21,10 +21,7 @@ function getExtension(filename: string): string {
   return parts.length > 1 ? (parts.pop() as string) : "";
 }
 
-function detectKind(
-  file: File,
-  buffer: Buffer
-): FileKind {
+function detectKind(file: File, buffer: Buffer): FileKind {
   const ext = getExtension(file.name || "");
   const type = (file.type || "").toLowerCase();
 
@@ -62,9 +59,31 @@ function detectKind(
   return "unsupported";
 }
 
+function normalizeUnicodeText(rawText: string): string {
+  return rawText
+    // Ligatures
+    .replace(/\uFB00/g, "ff")
+    .replace(/\uFB01/g, "fi")
+    .replace(/\uFB02/g, "fl")
+    .replace(/\uFB03/g, "ffi")
+    .replace(/\uFB04/g, "ffl")
+    .replace(/\uFB05/g, "ft")
+    .replace(/\uFB06/g, "st")
+    // Typographical quotes & dashes
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\u2026/g, "...")
+    // Non-breaking spaces and unusual whitespace
+    .replace(/[\u00A0\u2000-\u200B\u202F\u205F]/g, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+}
+
 async function extractDocxText(buffer: Buffer): Promise<string> {
   const result = await mammoth.extractRawText({ buffer });
-  return result.value ?? "";
+  return normalizeUnicodeText(result.value ?? "");
 }
 
 function parseModelJson(text: string): unknown {
@@ -107,7 +126,7 @@ function normalizeBullets(raw: unknown): ExperienceBullet[] {
   });
 }
 
-const PARSE_CV_SYSTEM_INSTRUCTION = `You are parsing a CV into structured, high-impact experience bullets for an experience bank.
+const PARSE_CV_SYSTEM_INSTRUCTION = `You are an expert resume parsing engine. Your job is to extract high-impact experience bullets from a candidate's CV document.
 Extract all meaningful achievement and impact bullets across ALL sections, including:
 1. Work Experience (engineering, operations, development, analysis).
 2. Leadership & Community Experience (organization coordination, partnerships, team management).
@@ -203,7 +222,7 @@ export async function POST(request: Request) {
 
       if (!docxText.trim()) {
         return NextResponse.json(
-          { error: "The uploaded DOCX file contains no text." },
+          { error: "The uploaded DOCX file contains no readable text." },
           { status: 400 }
         );
       }
@@ -214,7 +233,7 @@ export async function POST(request: Request) {
 ${docxText.slice(0, MAX_CV_CHARS)}
 </cv_content>`;
     } else {
-      const txtContent = buffer.toString("utf8").replace(/\u0000/g, "").trim();
+      const txtContent = normalizeUnicodeText(buffer.toString("utf8").replace(/\u0000/g, ""));
       if (!txtContent) {
         return NextResponse.json(
           { error: "The uploaded TXT file is empty." },
@@ -240,6 +259,7 @@ ${txtContent.slice(0, MAX_CV_CHARS)}
           contents,
           config: {
             systemInstruction: PARSE_CV_SYSTEM_INSTRUCTION,
+            temperature: 0.1,
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -303,7 +323,7 @@ ${txtContent.slice(0, MAX_CV_CHARS)}
     if (!text) {
       console.error("Gemini parse-cv returned empty response. Last error:", lastError);
       return NextResponse.json(
-        { error: "Unable to parse CV content at this time. Please try again." },
+        { error: "Unable to parse CV content at this time. Please try again or export as DOCX/TXT." },
         { status: 502 }
       );
     }

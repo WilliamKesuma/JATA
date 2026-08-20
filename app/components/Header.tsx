@@ -1,10 +1,21 @@
 "use client";
 
+import type { User } from "@supabase/supabase-js";
+import { UserMenu } from "./UserMenu";
+
 type HeaderProps = {
   bulletCount: number;
+  user: User | null;
+  onOpenAuth: () => void;
+  onSignOut: () => void;
 };
 
-export function Header({ bulletCount }: HeaderProps) {
+export function Header({
+  bulletCount,
+  user,
+  onOpenAuth,
+  onSignOut,
+}: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md px-6 py-3.5">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -37,12 +48,30 @@ export function Header({ bulletCount }: HeaderProps) {
               </span>
             </div>
           )}
+
           <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center gap-1.5">
-            <span>Demo limit: 10 gen / hr</span>
+            <span>{user ? "Quota: 25 / day" : "Demo limit: 10 gen / hr"}</span>
           </span>
-          <span className="hidden sm:inline-flex text-xs font-medium px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400">
-            ⚡ Gemini Powered
-          </span>
+
+          {user ? (
+            <UserMenu user={user} onSignOut={onSignOut} />
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white transition-colors shadow-sm shadow-indigo-600/30 cursor-pointer"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                />
+              </svg>
+              <span>Sign In</span>
+            </button>
+          )}
         </div>
       </div>
     </header>
