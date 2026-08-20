@@ -118,3 +118,94 @@ export function parseExperienceBank(value: unknown): ExperienceBullet[] | null {
 
   return bullets.slice(0, MAX_EXPERIENCE_BULLETS);
 }
+
+const STOP_WORDS = new Set([
+  "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
+  "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being",
+  "below", "between", "both", "but", "by", "can", "can't", "cannot", "could",
+  "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down",
+  "during", "each", "few", "for", "from", "further", "had", "hadn't", "has",
+  "hasn't", "have", "haven't", "having", "he", "her", "here", "hers", "herself",
+  "him", "himself", "his", "how", "i", "if", "in", "into", "is", "isn't", "it",
+  "its", "itself", "let's", "me", "more", "most", "mustn't", "my", "myself",
+  "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought",
+  "our", "ours", "ourselves", "out", "over", "own", "same", "shan't", "she",
+  "should", "shouldn't", "so", "some", "such", "than", "that", "the", "their",
+  "theirs", "them", "themselves", "then", "there", "these", "they", "this",
+  "those", "through", "to", "too", "under", "until", "up", "very", "was", "wasn't",
+  "we", "were", "weren't", "what", "when", "where", "which", "while", "who",
+  "whom", "why", "with", "won't", "would", "wouldn't", "you", "your", "yours",
+  "yourself", "yourselves", "role", "company", "requirements", "seeking", "looking",
+  "experience", "years", "candidate", "position", "work", "job"
+]);
+
+function extractKeywords(text: string): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.-]+/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+  return new Set(words);
+}
+
+export function rankRelevantBullets(
+  bullets: ExperienceBullet[],
+  jobDescription: string,
+  maxCount = 20
+): ExperienceBullet[] {
+  if (bullets.length <= maxCount) {
+    return bullets;
+  }
+
+  const jobLower = jobDescription.toLowerCase();
+  const jobKeywords = extractKeywords(jobDescription);
+
+  const scored = bullets.map((bullet) => {
+    let score = 0;
+
+    // 1. Tag matches (high priority: 3 points each)
+    for (const tag of bullet.tags) {
+      const tagLower = tag.toLowerCase();
+      if (jobLower.includes(tagLower) || jobKeywords.has(tagLower)) {
+        score += 3.0;
+      }
+    }
+
+    // 2. Keyword overlap in bullet text and context role (1 point per keyword match)
+    const bulletWords = extractKeywords(`${bullet.text} ${bullet.context.role} ${bullet.context.org}`);
+    for (const word of bulletWords) {
+      if (jobKeywords.has(word)) {
+        score += 1.0;
+      }
+    }
+
+    // 3. Category match (1 point)
+    if (jobLower.includes(bullet.category.replace(/-/g, " "))) {
+      score += 1.5;
+    }
+
+    // 4. Strength boost
+    if (bullet.strength === "high") {
+      score += 2.0;
+    } else if (bullet.strength === "medium") {
+      score += 1.0;
+    }
+
+    // 5. Quantified outcome / metric boost
+    if (bullet.metrics) {
+      score += 1.5;
+    }
+
+    return { bullet, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, maxCount).map((item) => item.bullet);
+}
+
+export function formatBulletForPrompt(bullet: ExperienceBullet): string {
+  const metricsStr = bullet.metrics ? ` | Metrics: ${bullet.metrics}` : "";
+  return `- [ID: ${bullet.id} | Tags: ${bullet.tags.join(", ")} | Role: ${bullet.context.role} at ${bullet.context.org}${metricsStr} | Strength: ${bullet.strength}] ${bullet.text}`;
+}
+

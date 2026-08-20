@@ -1,6 +1,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-import { parseExperienceBank } from "@/lib/experience";
+import {
+  formatBulletForPrompt,
+  parseExperienceBank,
+  rankRelevantBullets,
+} from "@/lib/experience";
 import {
   enforceRateLimit,
   MAX_JOB_DESCRIPTION_CHARS,
@@ -94,12 +98,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const bulletList = experienceBank
-      .map(
-        (bullet) =>
-          `- id: ${bullet.id}\n  category: ${bullet.category}\n  tags: ${bullet.tags.join(", ")}\n  role: ${bullet.context.role}\n  org: ${bullet.context.org}\n  dates: ${bullet.context.dates}\n  metrics: ${bullet.metrics ?? "none"}\n  strength: ${bullet.strength}\n  text: ${bullet.text}`
-      )
-      .join("\n");
+    // Token optimization: smart relevance ranking (top 20 bullets) & compact line formatting
+    const relevantBullets = rankRelevantBullets(experienceBank, jobDescription, 20);
+    const bulletList = relevantBullets.map(formatBulletForPrompt).join("\n");
 
     const prompt = `Please analyze the job description and candidate experience bullets below to generate the tailored application materials.
 
@@ -123,6 +124,8 @@ ${bulletList}
           contents: prompt,
           config: {
             systemInstruction: TAILOR_SYSTEM_INSTRUCTION,
+            temperature: 0.2,
+            maxOutputTokens: 1024,
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
