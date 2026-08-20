@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export const IP_LIMIT_PER_HOUR = 10;
 export const GLOBAL_LIMIT_PER_DAY = 150;
 export const MIN_INTERVAL_MS = 10_000;
@@ -19,19 +21,19 @@ function hasUpstash(): boolean {
 
 function getClientIp(request: Request): string {
   const candidates = [
-    request.headers.get("x-forwarded-for")?.split(",")[0],
-    request.headers.get("x-real-ip"),
-    request.headers.get("x-vercel-forwarded-for"),
+    request.headers.get("x-vercel-forwarded-for")?.split(",").pop()?.trim(),
+    request.headers.get("x-real-ip")?.trim(),
+    request.headers.get("cf-connecting-ip")?.trim(),
+    request.headers.get("x-forwarded-for")?.split(",").pop()?.trim(),
   ];
 
   for (const value of candidates) {
-    const ip = value?.trim();
-    if (ip) {
-      return ip;
+    if (value && isIP(value)) {
+      return value;
     }
   }
 
-  return "unknown";
+  return "127.0.0.1";
 }
 
 async function upstash(command: (string | number)[]): Promise<unknown> {
@@ -138,10 +140,18 @@ async function checkRedis(ip: string): Promise<RateLimitDecision> {
 }
 
 export async function enforceRateLimit(request: Request): Promise<RateLimitDecision> {
+  const ip = getClientIp(request);
+
   if (hasUpstash()) {
-    return checkRedis(getClientIp(request));
+    return checkRedis(ip);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[Security Warning] UPSTASH_REDIS_REST_URL is not set. In-memory rate limiting is ineffective in multi-instance or serverless environments."
+    );
   }
 
   // Gracefully fallback to in-memory rate limiting
-  return checkMemory(getClientIp(request));
+  return checkMemory(ip);
 }
